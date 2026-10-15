@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Hospital Emergency Management System</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600&family=Fraunces:wght@600;800&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#eef3f2;--surface:#fff;--ink:#12302e;--mute:#5d7573;--line:#d3dedc;--em:#c8312b;--ok:#1f7a6b;--nm:#2b5f9e}
+@media(prefers-color-scheme:dark){:root{--bg:#0f1c1b;--surface:#172827;--ink:#e6f0ee;--mute:#92aaa7;--line:#2a403e;--em:#ff6a5f;--ok:#4cc2ad;--nm:#7fb0ee}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 "IBM Plex Sans",system-ui,sans-serif;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+header{padding:28px 20px 8px;max-width:960px;margin:auto}
+h1{font:800 clamp(1.7rem,5vw,2.6rem)/1.1 Fraunces,Georgia,serif;margin:0 0 6px}
+header p{color:var(--mute);margin:0}
+main{max-width:960px;margin:auto;padding:16px 20px 48px;display:grid;gap:20px;grid-template-columns:1fr}
+@media(min-width:800px){main{grid-template-columns:320px 1fr}}
+section{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:18px}
+h2{font:600 1.15rem Fraunces,Georgia,serif;margin:0 0 12px}
+label{display:block;font-size:.9rem;color:var(--mute);margin:10px 0 4px}
+input,select,button{font:inherit;width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink)}
+button{cursor:pointer;background:var(--ink);color:var(--surface);border:0;font-weight:600;margin-top:14px}
+button.treat{background:var(--ok);color:#fff;margin:0 0 14px}
+button.small{width:auto;padding:5px 10px;font-size:.8rem;margin:0;background:transparent;color:var(--mute);border:1px solid var(--line)}
+:focus-visible{outline:3px solid var(--nm);outline-offset:2px}
+.stats{display:flex;gap:10px;margin-bottom:14px}
+.stats div{flex:1;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:.8rem;color:var(--mute)}
+.stats b{display:block;font-size:1.4rem;color:var(--ink)}
+ul{list-style:none;margin:0;padding:0}
+li{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:12px;border:1px solid var(--line);border-left:6px solid var(--nm);border-radius:8px;margin-bottom:8px}
+li.emergency{border-left-color:var(--em)}
+li.done{opacity:.65;border-left-color:var(--ok)}
+li small{display:block;color:var(--mute)}
+.tag{font-weight:600;font-size:.75rem;padding:2px 8px;border-radius:99px;border:1px solid currentColor}
+.tag.emergency{color:var(--em)}.tag.normal{color:var(--nm)}.tag.treated{color:var(--ok)}
+.row{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.empty{color:var(--mute);padding:8px 0}
+#msg{color:var(--em);min-height:1.2em;font-size:.9rem;margin-top:8px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Hospital Emergency Management</h1>
+  <p>Emergency cases are treated first. Normal cases follow arrival order.</p>
+</header>
+<main>
+  <section>
+    <h2>Register patient</h2>
+    <form id="f">
+      <label for="name">Full name</label><input id="name" required>
+      <label for="age">Age</label><input id="age" type="number" min="0" max="120">
+      <label for="complaint">Complaint</label><input id="complaint" required>
+      <label for="priority">Priority</label>
+      <select id="priority"><option value="normal">Normal</option><option value="emergency">Emergency</option></select>
+      <button type="submit">Add to queue</button>
+      <div id="msg" role="alert"></div>
+    </form>
+  </section>
+  <div style="display:grid;gap:20px">
+    <section>
+      <h2>Waiting queue</h2>
+      <div class="stats" id="stats"></div>
+      <button class="treat" id="next">Treat next patient</button>
+      <ul id="queue"></ul>
+    </section>
+    <section><h2>Patient records</h2><ul id="records"></ul></section>
+  </div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+async function api(url, method = 'GET', body) {
+  const r = await fetch(url, { method, headers: {'Content-Type':'application/json'}, body: body && JSON.stringify(body) });
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error || 'Request failed');
+  return j;
+}
+const item = (p, i) => `<li class="${p.status === 'treated' ? 'done' : p.priority}">
+  <div><strong>${i != null ? (i + 1) + '. ' : ''}${esc(p.name)}</strong>${p.age ? ', ' + p.age : ''}<small>${esc(p.complaint)}</small></div>
+  <div class="row"><span class="tag ${p.status === 'treated' ? 'treated' : p.priority}">${p.status === 'treated' ? 'Treated' : p.priority}</span>
+  ${p.status === 'waiting' ? `<button class="small" data-pri="${p.id}" data-to="${p.priority === 'normal' ? 'emergency' : 'normal'}">Make ${p.priority === 'normal' ? 'emergency' : 'normal'}</button>` : ''}
+  <button class="small" data-del="${p.id}" aria-label="Delete ${esc(p.name)}">Delete</button></div></li>`;
+async function load() {
+  const s = await api('/api/state');
+  $('stats').innerHTML = `<div><b>${s.stats.waiting}</b>Waiting</div><div><b>${s.stats.emergency}</b>Emergency</div><div><b>${s.stats.treated}</b>Treated</div>`;
+  $('queue').innerHTML = s.waiting.map(item).join('') || '<p class="empty">No one is waiting. Register a patient to begin.</p>';
+  $('records').innerHTML = s.records.map(p => item(p)).join('') || '<p class="empty">No records yet.</p>';
+}
+$('f').onsubmit = async (e) => {
+  e.preventDefault(); $('msg').textContent = '';
+  try {
+    await api('/api/patients', 'POST', { name: $('name').value, age: $('age').value, complaint: $('complaint').value, priority: $('priority').value });
+    e.target.reset(); load();
+  } catch (err) { $('msg').textContent = err.message; }
+};
+$('next').onclick = async () => { try { await api('/api/treat-next', 'POST'); } catch (err) { alert(err.message); } load(); };
+document.body.addEventListener('click', async (e) => {
+  const t = e.target;
+  if (t.dataset.del) { await api('/api/patients/' + t.dataset.del, 'DELETE'); load(); }
+  if (t.dataset.pri) { await api('/api/patients/' + t.dataset.pri + '/priority', 'PATCH', { priority: t.dataset.to }); load(); }
+});
+load(); setInterval(load, 5000);
+</script>
+</body>
+</html>
